@@ -25,7 +25,7 @@ func OpenFile(filename string) (f MediaFile, err error) {
         return MediaFile{}, errors.New("Cannot open file " + filename)
     }
 
-    return MediaFile{}, nil
+    return
 }
 
 func (f MediaFile) Close() {
