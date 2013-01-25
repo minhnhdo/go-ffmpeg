@@ -1,3 +1,3 @@
 go-ffmpeg
 ---------
-go-ffmpeg is a simple wrapper around the ffmpeg library.
+go-ffmpeg is a simple wrapper around the ffmpeg library for the Go programming language.
