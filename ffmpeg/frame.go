@@ -6,10 +6,10 @@ package ffmpeg
 import "C"
 
 type Frame struct {
-    frame C.AVFrame
+    avframe C.AVFrame
     PTS int64
 }
 
 func (frame *Frame) Defaults() {
-    C.avcodec_get_frame_defaults(&frame.frame)
+    C.avcodec_get_frame_defaults(&frame.avframe)
 }

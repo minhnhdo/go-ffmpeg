@@ -11,8 +11,6 @@ AVStream* AVFormatContext_GetStream(AVFormatContext* fmtctx, int streamid) {
 import "C"
 import (
     "errors"
-    "fmt"
-    "io"
     "runtime"
     "unsafe"
 )
@@ -21,15 +19,14 @@ type MediaFile struct {
     Name string
     fmtctx *C.AVFormatContext
     Streams []Stream
-    StreamIndex int
-    CurrentFrame *Frame
+    DecodedStreams []int
+    packets chan *C.AVPacket
 }
 
 func Open(name string) (*MediaFile, error) {
     file := &MediaFile{
         Name: name,
-        StreamIndex: -1,
-        CurrentFrame: &Frame{},
+        packets: make(chan *C.AVPacket, 8),
     }
 
     cName := C.CString(name)
@@ -47,12 +44,59 @@ func Open(name string) (*MediaFile, error) {
     file.Streams = make([]Stream, file.fmtctx.nb_streams)
     for i := range file.Streams {
         file.Streams[i] = Stream{
-            stream: C.AVFormatContext_GetStream(file.fmtctx, C.int(i)),
+            avstream: C.AVFormatContext_GetStream(file.fmtctx, C.int(i)),
         }
-        file.Streams[i].init()
     }
 
     return file, nil
+}
+
+func (file *MediaFile) DecodeStream(index int) {
+    if index < 0 || index >= len(file.Streams) {
+        return
+    }
+
+    file.DecodedStreams = append(file.DecodedStreams, index)
+
+    file.Streams[index].init()
+}
+
+func (file *MediaFile) StartDecoding() {
+    for _, i := range file.DecodedStreams {
+        go file.Streams[i].decode()
+    }
+
+    go func() {
+        outer:
+        for packet := range file.packets {
+            if packet == nil {
+                break outer
+            }
+            for _, i := range file.DecodedStreams {
+                if packet.stream_index == C.int(i) {
+                    file.Streams[i].packets <- packet
+                    continue outer
+                }
+            }
+            C.av_free_packet(packet)
+        }
+        for _, i := range file.DecodedStreams {
+            file.Streams[i].packets <- nil
+        }
+    }()
+
+    go func() {
+        for {
+            packet := new(C.AVPacket)
+            C.av_init_packet(packet)
+            if C.av_read_frame(file.fmtctx, packet) < 0 {
+                // assume EOF
+                file.packets <- nil
+                return
+            }
+            file.packets <- packet
+        }
+    }()
 }
 
 func (file *MediaFile) IndexBestStream(mediaType MediaType) int {
@@ -60,48 +104,12 @@ func (file *MediaFile) IndexBestStream(mediaType MediaType) int {
 }
 
 func (file *MediaFile) IndexFirstStream(mediaType MediaType) int {
-    for i, s := range file.Streams {
-        if s.stream.codec.codec_type == C.enum_AVMediaType(mediaType) {
+    for i := range file.Streams {
+        if file.Streams[i].avstream.codec.codec_type == C.enum_AVMediaType(mediaType) {
             return i
         }
     }
     return -1
-}
-
-func (file *MediaFile) NextFrame() error {
-    var (
-        gotFrame C.int = 0
-        packet C.AVPacket
-    )
-
-    for {
-        if C.av_read_frame(file.fmtctx, &packet) < 0 {
-            return io.EOF
-        }
-        defer C.av_free_packet(&packet)
-
-        if index := packet.stream_index; file.StreamIndex < 0 || index == C.int(file.StreamIndex) {
-            file.CurrentFrame.Defaults()
-            switch file.Streams[index].stream.codec.codec_type {
-            case C.AVMEDIA_TYPE_AUDIO:
-                if C.avcodec_decode_audio4(file.Streams[index].cdcctx, &file.CurrentFrame.frame, &gotFrame, &packet) < 0 {
-                    return errors.New(fmt.Sprintf("cannot decode audio packet from stream %d", index))
-                }
-            case C.AVMEDIA_TYPE_VIDEO:
-                if C.avcodec_decode_video2(file.Streams[index].cdcctx, &file.CurrentFrame.frame, &gotFrame, &packet) < 0 {
-                    return errors.New(fmt.Sprintf("cannot decode video packet from stream %d", index))
-                }
-            default:
-                // unsupported media type
-                continue
-            }
-            if gotFrame != 0 {
-                file.CurrentFrame.PTS = int64(C.av_frame_get_best_effort_timestamp(&file.CurrentFrame.frame))
-                return nil
-            }
-        }
-    }
-    return errors.New("should not reach end of NextFrame method")
 }
 
 func (file *MediaFile) Close() error {
