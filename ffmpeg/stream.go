@@ -9,11 +9,11 @@ import (
 )
 
 type Stream struct {
+    Frames chan *Frame
     avstream *C.AVStream
     cdcctx *C.AVCodecContext
     decodeF decodeFunc
     frame *Frame
-    Frames chan *Frame
     packets chan *C.AVPacket
     noMorePackets chan bool
 }
@@ -28,7 +28,7 @@ func (stream *Stream) init() error {
     }
 
     if stream.cdcctx != nil {
-        stream.FreeCodecContext()
+        stream.freeCodecContext()
     }
     stream.cdcctx = stream.avstream.codec
 
@@ -46,7 +46,7 @@ func (stream *Stream) init() error {
     case C.AVMEDIA_TYPE_VIDEO:
         stream.decodeF = avcodec_decode_video
     default:
-        stream.FreeCodecContext()
+        stream.freeCodecContext()
         close(stream.Frames)
         return errors.New("unsupported codec")
     }
@@ -73,7 +73,7 @@ func (stream *Stream) decode() {
     }
 }
 
-func (stream *Stream) FreeCodecContext() {
+func (stream *Stream) freeCodecContext() {
     if stream.cdcctx != nil {
         C.avcodec_close(stream.cdcctx)
         stream.cdcctx = nil

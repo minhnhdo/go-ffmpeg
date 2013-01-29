@@ -6,8 +6,8 @@ package ffmpeg
 import "C"
 
 type Frame struct {
-    avframe C.AVFrame
     PTS int64
+    avframe C.AVFrame
 }
 
 func (frame *Frame) Defaults() {

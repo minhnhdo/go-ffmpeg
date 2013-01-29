@@ -17,9 +17,9 @@ import (
 
 type MediaFile struct {
     Name string
-    fmtctx *C.AVFormatContext
     Streams []Stream
     DecodedStreams []int
+    fmtctx *C.AVFormatContext
     packets chan *C.AVPacket
 }
 
@@ -67,15 +67,15 @@ func (file *MediaFile) StartDecoding() {
     }
 
     go func() {
-        outer:
+        get_packets:
         for packet := range file.packets {
             if packet == nil {
-                break outer
+                break get_packets
             }
             for _, i := range file.DecodedStreams {
                 if packet.stream_index == C.int(i) {
                     file.Streams[i].packets <- packet
-                    continue outer
+                    continue get_packets
                 }
             }
             C.av_free_packet(packet)
@@ -112,9 +112,9 @@ func (file *MediaFile) IndexFirstStream(mediaType MediaType) int {
     return -1
 }
 
-func (file *MediaFile) Close() error {
+func (file *MediaFile) Close() {
     for i := range file.Streams {
-        file.Streams[i].FreeCodecContext()
+        file.Streams[i].freeCodecContext()
     }
 
     if file.fmtctx != nil {
@@ -122,6 +122,4 @@ func (file *MediaFile) Close() error {
     }
 
     runtime.SetFinalizer(file, nil)
-
-    return nil
 }
