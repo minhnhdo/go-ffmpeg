@@ -6,7 +6,6 @@ package ffmpeg
 import "C"
 import (
     "errors"
-    "fmt"
 )
 
 type Stream struct {
@@ -36,7 +35,7 @@ func (stream *Stream) init() error {
     if decoder := C.avcodec_find_decoder(stream.cdcctx.codec_id); decoder == nil || C.avcodec_open2(stream.cdcctx, decoder, nil) < 0 {
         stream.cdcctx = nil
         close(stream.Frames)
-        return errors.New(fmt.Sprintf("Cannot find decoder for %s", C.GoString(C.avcodec_get_name(stream.cdcctx.codec_id))))
+        return errors.New("Cannot find decoder for " +  C.GoString(C.avcodec_get_name(stream.cdcctx.codec_id)))
     }
 
     stream.packets = make(chan *C.AVPacket)
